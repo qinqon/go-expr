@@ -12,8 +12,8 @@ func main() {
 	expressions := map[string]string{
 		"default-gw":        "routes.running.destination==\"0.0.0.0/0\"",
 		"base-iface-routes": "routes.running.next-hop-interface==matchers.default-gw.routes.running.0.next-hop-interface",
-		//"primary-nic":               "interfaces.name==matchers.default-gw.routes.running.0.next-hop-interface",
-		//"bridge-routes":             "matchers.base-iface-routes | routes.running.next-hop-interface=\"br1\"",
+		"primary-nic":       "interfaces.name==matchers.default-gw.routes.running.0.next-hop-interface",
+		//"bridge-routes":     "matchers.base-iface-routes | routes.running.next-hop-interface=\"br1\"",
 		//"delete-primary-nic-routes": "matchers.base-iface-routes | routes.running.absent=true",
 		//"composed-routes":           "matchers.delete-primary-nic-routes.routes.running + replacers.bridge-routes.routes.running",
 	}
@@ -64,7 +64,7 @@ interfaces:
 		panic(err)
 	}
 
-	matchers, err := MatchersEmitter{AST: asts}.Emit(currentState)
+	matchers, err := MatchersEmitter{AST: asts, currentState: currentState}.Emit()
 	if err != nil {
 		panic(err)
 	}

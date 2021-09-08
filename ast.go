@@ -1,5 +1,6 @@
 package main
 
+type Path []string
 type Operator int
 
 const (

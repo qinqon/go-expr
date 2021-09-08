@@ -7,6 +7,7 @@ import (
 type MatchersEmitter struct {
 	AST              map[string]*Node
 	resolvedMatchers map[string]interface{}
+	currentState     map[interface{}]interface{}
 }
 
 type filterArgument struct {
@@ -51,37 +52,51 @@ func filter(input interface{}, path []Step, argument *filterArgument) (interface
 			return []interface{}{filteredInput}, nil
 		}
 	} else {
-		// This is the end, filter the field with the argument
-		if step.Identifier == nil {
-			return nil, fmt.Errorf("bad path expression ast: terminal step only accepts identifier")
+		if argument != nil {
+			// This is the end, filter the field with the argument
+			if step.Identifier == nil {
+				return nil, fmt.Errorf("bad path expression ast: terminal step only accepts identifier")
+			}
+			filteredSlice := []interface{}{}
+			for _, inputItem := range input.([]interface{}) {
+				mapToFilter := inputItem.(map[interface{}]interface{})
+				valueToCompare, ok := mapToFilter[*step.Identifier]
+				if !ok {
+					return nil, fmt.Errorf("bad path expression: %s does not exist", *step.Identifier)
+				}
+				if argument == nil {
+					return nil, fmt.Errorf("TODO: filter without argument is not supported")
+				}
+				if argument.equal(valueToCompare) {
+					filteredSlice = append(filteredSlice, inputItem)
+				}
+			}
+			return filteredSlice, nil
+		} else {
+			return input, nil
 		}
-		filteredSlice := []interface{}{}
-		for _, inputItem := range input.([]interface{}) {
-			mapToFilter := inputItem.(map[interface{}]interface{})
-			valueToCompare, ok := mapToFilter[*step.Identifier]
-			if !ok {
-				return nil, fmt.Errorf("bad path expression: %s does not exist", *step.Identifier)
-			}
-			if argument == nil {
-				return nil, fmt.Errorf("TODO: filter without argument is not supported")
-			}
-			if argument.equal(valueToCompare) {
-				filteredSlice = append(filteredSlice, inputItem)
-			}
-		}
-		return filteredSlice, nil
 	}
 	return nil, nil
 }
 
-func (e MatchersEmitter) resolvePath(path []Step) (interface{}, error) {
-	var result interface{}
-	// Use the resolved matcher as the input
+func (e MatchersEmitter) resolveMatchersPath(path []Step) ([]Step, interface{}, error) {
 	if path[0].Identifier != nil && *path[0].Identifier == "matchers" {
-		result = e.resolvedMatchers[*path[1].Identifier]
-		path = path[2:len(path)]
+		result, err := e.resolveMatcher(*path[1].Identifier)
+		if err != nil {
+			return nil, nil, err
+		}
+		path := path[2:len(path)]
+		return path, result, nil
 	}
-	//TODO: pass currentState ?
+	return path, e.currentState, nil
+}
+
+func (e MatchersEmitter) resolvePath(path []Step) (interface{}, error) {
+	path, result, err := e.resolveMatchersPath(path)
+	if err != nil {
+		return nil, err
+	}
+	// Use the resolved matcher as the input
 	for _, step := range path {
 		if step.Identifier != nil {
 			result = result.(map[interface{}]interface{})[*step.Identifier]
@@ -111,37 +126,69 @@ func (e MatchersEmitter) resolveFilterArgument(argument Argument) (*filterArgume
 	return &filterArgument{argument.Number, argument.String}, nil
 }
 
-func (e MatchersEmitter) resolveEqual(currentState interface{}, arguments []Argument) (interface{}, error) {
+func (e MatchersEmitter) resolveFilter(arguments []Argument) (interface{}, error) {
 	lhs := arguments[0]
-	rhs := arguments[1]
 	if lhs.Path == nil {
 		return nil, fmt.Errorf("bad filter expression: left argument should be a path")
 	}
-	argument, err := e.resolveFilterArgument(rhs)
+
+	var argument *filterArgument
+	if len(arguments) > 1 {
+		// is a filter with comparation
+		rhs := arguments[1]
+		var err error
+		argument, err = e.resolveFilterArgument(rhs)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	lhsPath, currentState, err := e.resolveMatchersPath(lhs.Path)
 	if err != nil {
 		return nil, err
 	}
-	result, err := filter(currentState, lhs.Path, argument)
+	result, err := filter(currentState, lhsPath, argument)
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (e MatchersEmitter) Emit(currentState interface{}) (map[string]interface{}, error) {
-	e.resolvedMatchers = map[string]interface{}{}
-	for name, ast := range e.AST {
-		var resolvedMatcher interface{}
+func (e MatchersEmitter) resolveMatcher(name string) (interface{}, error) {
+
+	resolvedMatcher, ok := e.resolvedMatchers[name]
+	if ok {
+		return resolvedMatcher, nil
+	}
+	ast := e.AST[name]
+	if ast.Expression.Operator > 0 {
 		switch ast.Expression.Operator {
+		case 0:
 		case Equal:
 			var err error
-			resolvedMatcher, err = e.resolveEqual(currentState, ast.Expression.Arguments)
+			resolvedMatcher, err = e.resolveFilter(ast.Expression.Arguments)
 			if err != nil {
 				return nil, err
 			}
 		}
-		//TODO Pipe
-		e.resolvedMatchers[name] = resolvedMatcher
+	}
+	//TODO Pipe
+	e.resolvedMatchers[name] = resolvedMatcher
+	return resolvedMatcher, nil
+}
+
+func (e MatchersEmitter) Emit() (map[string]interface{}, error) {
+	e.resolvedMatchers = map[string]interface{}{}
+	for name, _ := range e.AST {
+		_, ok := e.resolvedMatchers[name]
+		if ok {
+			// Matcher already resolved
+			continue
+		}
+		_, err := e.resolveMatcher(name)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return e.resolvedMatchers, nil
 }
