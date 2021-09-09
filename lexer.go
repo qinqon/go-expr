@@ -89,6 +89,8 @@ func (l *Lexer) Lex() (*Token, error) {
 		switch r {
 		case '.':
 			return &Token{l.pos, PATH, tokens[PATH]}, nil
+		case '|':
+			return &Token{l.pos, PIPE, tokens[PIPE]}, nil
 		case '=':
 			if l.lexEqual() {
 				return &Token{l.pos, EQUAL, tokens[EQUAL]}, nil

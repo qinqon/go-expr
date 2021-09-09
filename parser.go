@@ -65,6 +65,7 @@ func (p *Parser) parseNode() (*Node, *Token, error) {
 			Arguments: []Argument{},
 		},
 	}
+
 	// LHS argument
 	argument, currentToken, err := p.parseArgument()
 	if err != nil {
@@ -100,11 +101,13 @@ func (p *Parser) Parse() (*Node, error) {
 	}
 
 	for currentToken.Type == PIPE {
-		node, currentToken, err = p.parseNode()
+		var pipedNode *Node
+		pipedNode, currentToken, err = p.parseNode()
 		if err != nil {
 			return nil, err
 		}
-		node.Pipe = node
+		node.Pipe = pipedNode
+		node = pipedNode
 	}
 	return node, nil
 }

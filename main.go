@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -13,13 +12,12 @@ func main() {
 		"default-gw":        "routes.running.destination==\"0.0.0.0/0\"",
 		"base-iface-routes": "routes.running.next-hop-interface==matchers.default-gw.routes.running.0.next-hop-interface",
 		"primary-nic":       "interfaces.name==matchers.default-gw.routes.running.0.next-hop-interface",
-		//"bridge-routes":     "matchers.base-iface-routes | routes.running.next-hop-interface=\"br1\"",
+		"bridge-routes":     "matchers.base-iface-routes | routes.running.next-hop-interface=\"br1\"",
 		//"delete-primary-nic-routes": "matchers.base-iface-routes | routes.running.absent=true",
 		//"composed-routes":           "matchers.delete-primary-nic-routes.routes.running + replacers.bridge-routes.routes.running",
 	}
 	asts := map[string]*Node{}
 	for name, expression := range expressions {
-		fmt.Println(expression)
 		parser := NewParser(strings.NewReader(expression))
 		ast, err := parser.Parse()
 		if err != nil {
@@ -27,12 +25,6 @@ func main() {
 		}
 		asts[name] = ast
 	}
-
-	astsJSON, err := json.MarshalIndent(&asts, "", " ")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("%s\n", astsJSON)
 
 	currentStateYAML := `
 routes:
@@ -59,7 +51,7 @@ interfaces:
 `
 
 	currentState := map[interface{}]interface{}{}
-	err = yaml.Unmarshal([]byte(currentStateYAML), &currentState)
+	err := yaml.Unmarshal([]byte(currentStateYAML), &currentState)
 	if err != nil {
 		panic(err)
 	}
@@ -69,5 +61,7 @@ interfaces:
 		panic(err)
 	}
 
-	fmt.Println(matchers)
+	for k, v := range matchers {
+		fmt.Printf("%s: %+v\n", k, v)
+	}
 }

@@ -79,20 +79,20 @@ func filter(input interface{}, path []Step, argument *filterArgument) (interface
 	return nil, nil
 }
 
-func (e MatchersEmitter) resolveMatchersPath(path []Step) ([]Step, interface{}, error) {
+func (e MatchersEmitter) resolveMatchersPath(state interface{}, path []Step) ([]Step, interface{}, error) {
 	if path[0].Identifier != nil && *path[0].Identifier == "matchers" {
-		result, err := e.resolveMatcher(*path[1].Identifier)
+		result, err := e.resolveMatcher(state, *path[1].Identifier)
 		if err != nil {
 			return nil, nil, err
 		}
 		path := path[2:len(path)]
 		return path, result, nil
 	}
-	return path, e.currentState, nil
+	return path, state, nil
 }
 
-func (e MatchersEmitter) resolvePath(path []Step) (interface{}, error) {
-	path, result, err := e.resolveMatchersPath(path)
+func (e MatchersEmitter) resolvePath(state interface{}, path []Step) (interface{}, error) {
+	path, result, err := e.resolveMatchersPath(state, path)
 	if err != nil {
 		return nil, err
 	}
@@ -107,9 +107,9 @@ func (e MatchersEmitter) resolvePath(path []Step) (interface{}, error) {
 	return result, nil
 }
 
-func (e MatchersEmitter) resolveFilterArgument(argument Argument) (*filterArgument, error) {
+func (e MatchersEmitter) resolveFilterArgument(state interface{}, argument Argument) (*filterArgument, error) {
 	if argument.Path != nil {
-		result, err := e.resolvePath(argument.Path)
+		result, err := e.resolvePath(state, argument.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +126,7 @@ func (e MatchersEmitter) resolveFilterArgument(argument Argument) (*filterArgume
 	return &filterArgument{argument.Number, argument.String}, nil
 }
 
-func (e MatchersEmitter) resolveFilter(arguments []Argument) (interface{}, error) {
+func (e MatchersEmitter) resolveFilter(state interface{}, arguments []Argument) (interface{}, error) {
 	lhs := arguments[0]
 	if lhs.Path == nil {
 		return nil, fmt.Errorf("bad filter expression: left argument should be a path")
@@ -137,13 +137,13 @@ func (e MatchersEmitter) resolveFilter(arguments []Argument) (interface{}, error
 		// is a filter with comparation
 		rhs := arguments[1]
 		var err error
-		argument, err = e.resolveFilterArgument(rhs)
+		argument, err = e.resolveFilterArgument(state, rhs)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	lhsPath, currentState, err := e.resolveMatchersPath(lhs.Path)
+	lhsPath, currentState, err := e.resolveMatchersPath(state, lhs.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -154,25 +154,39 @@ func (e MatchersEmitter) resolveFilter(arguments []Argument) (interface{}, error
 	return result, nil
 }
 
-func (e MatchersEmitter) resolveMatcher(name string) (interface{}, error) {
+func (e MatchersEmitter) resolveNode(state interface{}, node *Node) (interface{}, error) {
+	resolvedNode := state
+	switch node.Expression.Operator {
+	case 0:
+	case Equal:
+		var err error
+		resolvedNode, err = e.resolveFilter(state, node.Expression.Arguments)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if node.Pipe != nil {
+		var err error
+		resolvedNode, err = e.resolveNode(resolvedNode, node.Pipe)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return resolvedNode, nil
+}
+
+func (e MatchersEmitter) resolveMatcher(state interface{}, name string) (interface{}, error) {
 
 	resolvedMatcher, ok := e.resolvedMatchers[name]
 	if ok {
 		return resolvedMatcher, nil
 	}
-	ast := e.AST[name]
-	if ast.Expression.Operator > 0 {
-		switch ast.Expression.Operator {
-		case 0:
-		case Equal:
-			var err error
-			resolvedMatcher, err = e.resolveFilter(ast.Expression.Arguments)
-			if err != nil {
-				return nil, err
-			}
-		}
+	node := e.AST[name]
+	var err error
+	resolvedMatcher, err = e.resolveNode(state, node)
+	if err != nil {
+		return nil, err
 	}
-	//TODO Pipe
 	e.resolvedMatchers[name] = resolvedMatcher
 	return resolvedMatcher, nil
 }
@@ -185,7 +199,7 @@ func (e MatchersEmitter) Emit() (map[string]interface{}, error) {
 			// Matcher already resolved
 			continue
 		}
-		_, err := e.resolveMatcher(name)
+		_, err := e.resolveMatcher(e.currentState, name)
 		if err != nil {
 			return nil, err
 		}
