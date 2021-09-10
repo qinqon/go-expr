@@ -100,14 +100,15 @@ func (p *Parser) Parse() (*Node, error) {
 		return nil, err
 	}
 
+	currentNode := node
 	for currentToken.Type == PIPE {
 		var pipedNode *Node
 		pipedNode, currentToken, err = p.parseNode()
 		if err != nil {
 			return nil, err
 		}
-		node.Pipe = pipedNode
-		node = pipedNode
+		currentNode.Pipe = pipedNode
+		currentNode = pipedNode
 	}
 	return node, nil
 }

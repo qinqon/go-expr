@@ -1,6 +1,7 @@
 package main
 
-type Path []string
+import "strconv"
+
 type Operator int
 
 const (
@@ -12,6 +13,16 @@ const (
 type Step struct {
 	Index      *int    `json:"idx,omitempty"`
 	Identifier *string `json:"ident,omitempty"`
+}
+
+func (s Step) String() string {
+	if s.Index != nil {
+		return strconv.Itoa(*s.Index)
+	}
+	if s.Identifier != nil {
+		return *s.Identifier
+	}
+	return ""
 }
 
 type Argument struct {
